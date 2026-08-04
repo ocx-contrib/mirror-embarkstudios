@@ -89,9 +89,9 @@ assets:
     - "^cargo-about-\\d+\\.\\d+\\.\\d+-x86_64-unknown-linux-musl\\.tar\\.gz$"
   linux/arm64:
     - "^cargo-about-\\d+\\.\\d+\\.\\d+-aarch64-unknown-linux-musl\\.tar\\.gz$"
-  # ── PASS 2 (darwin) — arm64 ONLY; see the darwin/amd64 drop above ───────────
-  # darwin/arm64:
-  #   - "^cargo-about-\\d+\\.\\d+\\.\\d+-aarch64-apple-darwin\\.tar\\.gz$"
+  # ── PASS 2 (darwin) — LANDED. arm64 ONLY; see the darwin/amd64 drop above ──
+  darwin/arm64:
+    - "^cargo-about-\\d+\\.\\d+\\.\\d+-aarch64-apple-darwin\\.tar\\.gz$"
   # ── PASS 3 (windows) — both arches, .tar.gz not .zip ───────────────────────
   # windows/amd64:
   #   - "^cargo-about-\\d+\\.\\d+\\.\\d+-x86_64-pc-windows-msvc\\.tar\\.gz$"
@@ -186,12 +186,13 @@ platforms:
       - { image: "ubuntu:24.04", shell: bash }
       - { image: "alpine:3.20",  shell: sh }
       - { image: "fedora:40",    shell: bash }
-  # ── PASS 2 (darwin) ────────────────────────────────────────────────────────
+  # ── PASS 2 (darwin) — LANDED ───────────────────────────────────────────────
   # No darwin/amd64 — upstream dropped x86_64-apple-darwin at 0.9.0; evidence
-  # above `assets:`. Only Apple Silicon is declared.
-  # darwin/arm64:
-  #   runner: macos-14
-  #   shell: bash
+  # above `assets:`. Only Apple Silicon is declared, so there is no
+  # `prefix: ["arch", "-x86_64"]` Rosetta leg here (unlike ../cargo-deny).
+  darwin/arm64:
+    runner: macos-14
+    shell: bash
   # ── PASS 3 (windows) ───────────────────────────────────────────────────────
   # windows/amd64:
   #   runner: windows-latest
