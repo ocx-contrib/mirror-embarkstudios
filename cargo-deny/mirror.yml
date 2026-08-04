@@ -95,9 +95,9 @@ assets:
     - "^cargo-deny-\\d+\\.\\d+\\.\\d+-x86_64-apple-darwin\\.tar\\.gz$"
   darwin/arm64:
     - "^cargo-deny-\\d+\\.\\d+\\.\\d+-aarch64-apple-darwin\\.tar\\.gz$"
-  # ── PASS 3 (windows) — .tar.gz, not .zip ───────────────────────────────────
-  # windows/amd64:
-  #   - "^cargo-deny-\\d+\\.\\d+\\.\\d+-x86_64-pc-windows-msvc\\.tar\\.gz$"
+  # ── PASS 3 (windows) — LANDED. .tar.gz, not .zip ───────────────────────────
+  windows/amd64:
+    - "^cargo-deny-\\d+\\.\\d+\\.\\d+-x86_64-pc-windows-msvc\\.tar\\.gz$"
   # (no windows/arm64 — upstream never ships aarch64-pc-windows-msvc; see above)
 
 asset_type:
@@ -196,10 +196,13 @@ platforms:
   darwin/arm64:
     runner: macos-14
     shell: bash
-  # ── PASS 3 (windows) ───────────────────────────────────────────────────────
-  # windows/amd64:
-  #   runner: windows-latest
-  #   shell: pwsh
+  # ── PASS 3 (windows) — LANDED ──────────────────────────────────────────────
+  windows/amd64:
+    runner: windows-latest
+    shell: pwsh
+  # (no windows/arm64 — upstream ships no aarch64-pc-windows-msvc asset in any
+  # release; evidence above `assets:`. Declaring it would boot a windows-11-arm
+  # runner that resolves nothing and greens having tested nothing.)
   #
   # No `containers:` on darwin or windows — those runners have no Linux
   # container engine, and the key is rejected at spec load.
