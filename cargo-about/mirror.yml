@@ -92,11 +92,11 @@ assets:
   # ── PASS 2 (darwin) — LANDED. arm64 ONLY; see the darwin/amd64 drop above ──
   darwin/arm64:
     - "^cargo-about-\\d+\\.\\d+\\.\\d+-aarch64-apple-darwin\\.tar\\.gz$"
-  # ── PASS 3 (windows) — both arches, .tar.gz not .zip ───────────────────────
-  # windows/amd64:
-  #   - "^cargo-about-\\d+\\.\\d+\\.\\d+-x86_64-pc-windows-msvc\\.tar\\.gz$"
-  # windows/arm64:
-  #   - "^cargo-about-\\d+\\.\\d+\\.\\d+-aarch64-pc-windows-msvc\\.tar\\.gz$"
+  # ── PASS 3 (windows) — LANDED. Both arches, .tar.gz not .zip ───────────────
+  windows/amd64:
+    - "^cargo-about-\\d+\\.\\d+\\.\\d+-x86_64-pc-windows-msvc\\.tar\\.gz$"
+  windows/arm64:
+    - "^cargo-about-\\d+\\.\\d+\\.\\d+-aarch64-pc-windows-msvc\\.tar\\.gz$"
 
 asset_type:
   # NESTED archive on EVERY platform — one wrapper directory named after the
@@ -193,14 +193,17 @@ platforms:
   darwin/arm64:
     runner: macos-14
     shell: bash
-  # ── PASS 3 (windows) ───────────────────────────────────────────────────────
-  # windows/amd64:
-  #   runner: windows-latest
-  #   shell: pwsh
-  # windows/arm64:
-  #   # Native arm64 Windows runner — the amd64 pool cannot execute an ARM64 PE.
-  #   runner: windows-11-arm
-  #   shell: pwsh
+  # ── PASS 3 (windows) — LANDED ──────────────────────────────────────────────
+  windows/amd64:
+    runner: windows-latest
+    shell: pwsh
+  windows/arm64:
+    # Native arm64 Windows runner — the amd64 pool cannot execute an ARM64 PE.
+    # This leg exists here and NOT in ../cargo-deny: upstream ships
+    # aarch64-pc-windows-msvc for cargo-about in every release and for
+    # cargo-deny in none.
+    runner: windows-11-arm
+    shell: pwsh
   #
   # No `containers:` on darwin or windows — those runners have no Linux
   # container engine, and the key is rejected at spec load.
