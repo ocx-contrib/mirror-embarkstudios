@@ -13,6 +13,7 @@ identification only, under nominative fair use; no endorsement is implied.
 | Package | GHCR path | Upstream SPDX |
 |---|---|---|
 | `cargo-deny` | `ghcr.io/ocx-contrib/embarkstudios/cargo-deny` | `MIT OR Apache-2.0` |
+| `cargo-about` | `ghcr.io/ocx-contrib/embarkstudios/cargo-about` | `MIT OR Apache-2.0` |
 
 ---
 
@@ -45,6 +46,34 @@ well as being referenced here.
 The published binaries statically link third-party Rust crates under permissive
 licenses, enumerated in upstream's `Cargo.lock` — and audited by cargo-deny
 itself in upstream's own CI.
+
+No modifications are made to any upstream artifact in this repository; they are
+republished byte-for-byte inside an OCX bundle.
+
+---
+
+## `cargo-about`
+
+Upstream: <https://github.com/EmbarkStudios/cargo-about>
+Published to `ghcr.io/ocx-contrib/embarkstudios/cargo-about`.
+
+| Component | SPDX | Holder |
+|---|---|---|
+| cargo-about (`cargo-about`) | **MIT OR Apache-2.0** | Copyright (c) 2019 Embark Studios |
+
+Permissive, dual-licensed at the recipient's option. Redistribution of the
+compiled binary is granted under either
+<https://github.com/EmbarkStudios/cargo-about/blob/main/LICENSE-MIT> or
+<https://github.com/EmbarkStudios/cargo-about/blob/main/LICENSE-APACHE>.
+
+As with `cargo-deny`, the GitHub license API reports only `Apache-2.0` because
+it detects a single license per repository; the root in fact carries **both**
+`LICENSE-APACHE` and `LICENSE-MIT`, verified by listing
+`repos/EmbarkStudios/cargo-about/contents/`. Both ship **inside** every upstream
+release archive, so the terms travel with the redistributed bytes.
+
+The published binaries statically link third-party Rust crates under permissive
+licenses, enumerated in upstream's `Cargo.lock`.
 
 No modifications are made to any upstream artifact in this repository; they are
 republished byte-for-byte inside an OCX bundle.

@@ -6,7 +6,8 @@ directory per package.
 
 | Package | Spec | Publishes to | Announced as | Upstream SPDX |
 |---|---|---|---|---|
-| [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) | [`cargo-deny/mirror.yml`](cargo-deny/mirror.yml) | `ghcr.io/ocx-contrib/embarkstudios/cargo-deny` | `ocx.sh/embarkstudios/cargo-deny` | `MIT OR Apache-2.0` |
+| [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) | [`cargo-deny/mirror.yml`](cargo-deny/mirror.yml) | `ghcr.io/ocx-contrib/embarkstudios/cargo-deny` | [`ocx.sh/embarkstudios/cargo-deny`](https://index.ocx.sh/embarkstudios/cargo-deny) | `MIT OR Apache-2.0` |
+| [cargo-about](https://github.com/EmbarkStudios/cargo-about) | [`cargo-about/mirror.yml`](cargo-about/mirror.yml) | `ghcr.io/ocx-contrib/embarkstudios/cargo-about` | [`ocx.sh/embarkstudios/cargo-about`](https://index.ocx.sh/embarkstudios/cargo-about) | `MIT OR Apache-2.0` |
 
 Each upstream release is discovered, re-bundled, smoke-tested per
 `(version, platform)` and only then pushed with cascade tags, after which the
@@ -17,6 +18,7 @@ result is announced into the OCX index.
 ```
 mirror-base.yml         repo-wide policy every spec inherits via `extends:`
 cargo-deny/             one directory per package — same five files each
+cargo-about/
 ├── mirror.yml          the spec — never at the repo root
 ├── metadata.json       bundle interface
 ├── CATALOG.md          → ocx package describe
@@ -54,13 +56,30 @@ false requirement that hid it from every glibc host. The `alpine:3.20` container
 leg is what turns that universal claim into evidence; the measurement itself is
 recorded above the `assets:` block in `cargo-deny/mirror.yml`.
 
+`cargo-about` measures the same way — musl-only Linux, both builds fully static,
+both keys bare with the alpine leg — but its matrix is the **mirror image** of
+its sibling's, and neither was copied from the other:
+
+| | `cargo-deny` | `cargo-about` |
+|---|---|---|
+| `darwin/amd64` | ✅ every release | ❌ **dropped at 0.9.0** |
+| `windows/arm64` | ❌ never shipped | ✅ every release |
+
+`cargo-about`'s `x86_64-apple-darwin` asset is present in 0.8.2/0.8.3/0.8.4 and
+absent from 0.9.0 onward. With a floor of 0.8.4 the range spans that drop, so
+declaring the platform would resolve zero assets for every current release and
+be silently skipped forever; raising the floor does not recover it, because
+0.9.x has no Intel macOS build at all. It is therefore an evidenced exclusion,
+recorded above `assets:` in `cargo-about/mirror.yml`, and only Apple Silicon is
+declared for that package.
+
 Upstream ships `.tar.gz` on **Windows too**, not `.zip`, despite the
-`x86_64-pc-windows-msvc` target triple.
+`-pc-windows-msvc` target triples.
 
 ## Archive layout and the binaries claim
 
 Every upstream archive here is a **wrapper directory**
-(`cargo-deny-<version>-<triple>/`) holding the executable next to `README.md`,
+(`<tool>-<version>-<triple>/`) holding the executable next to `README.md`,
 `LICENSE-APACHE` and `LICENSE-MIT`, with no `bin/` subdirectory. The wrapper's
 name embeds both the version and the target triple, so `strip_components: 0`
 would need a `PATH` of `${installPath}/cargo-deny-0.20.2-x86_64-unknown-linux-musl`
@@ -72,16 +91,33 @@ so `auto`/`verify` is rejected at spec load with exit 65; `mirror-base.yml`
 therefore sets `bin_scan: off` and each `metadata.json` hand-lists its
 `binaries`.
 
-## The smoke test is offline, and does not need cargo
+## The smoke tests are offline, and do not need cargo
 
-`cargo-deny check` and `cargo-deny list` shell out to `cargo metadata`, so they
-need a Rust toolchain that neither `ubuntu:24.04`, `alpine:3.20`, `fedora:40`
-nor this bundle provides. `tests/smoke.star` therefore asserts the version
-*shape*, the cargo-plugin argv contract (`cargo-deny deny --version` must equal
-`cargo-deny --version`, because cargo invokes a plugin with its own subcommand
-name as `argv[1]`), and `cargo-deny init` writing its real config template into
-a scratch directory — paired with a negative control asserting the same command
-exits 1 and writes nothing where there is no `Cargo.toml`.
+Both tools are cargo plugins, and their headline subcommands shell out to
+`cargo metadata` — `cargo-deny check`/`list`, `cargo-about generate`/`init`. That
+needs a Rust toolchain which neither `ubuntu:24.04`, `alpine:3.20`, `fedora:40`
+nor these bundles provide, so neither smoke asserts on them. Each asserts
+instead:
+
+- the version *shape* (`\d+\.\d+\.\d+`), never the version or the banner text;
+- the **cargo-plugin argv contract** — `cargo-deny deny --version` must equal
+  `cargo-deny --version`, because cargo invokes a plugin with the plugin's own
+  subcommand name as `argv[1]` and the binary has to absorb it;
+- one genuinely hermetic operation with a provable result:
+  `cargo-deny init` writing its real config template (all six TOML sections)
+  into a scratch directory, and `cargo-about clarify` detecting `MIT` in a
+  license file written by the test and reporting a sha256 that was computed
+  independently by Python.
+
+Each is paired with a **negative control**, because both positives are
+passthrough-shaped: `init` writes a file (so would anything), and `clarify`
+echoes its input before its verdict (so would `cat`). Handed a directory with no
+`Cargo.toml`, and a file that is not a license, the real binaries exit 1 and
+produce nothing.
+
+`cargo-about`'s assertions are deliberately **quote-agnostic**: `clarify` emits
+`license = "MIT"` on 0.8.4 and `license = 'MIT'` from 0.9.x, a surface change
+inside the mirrored range.
 
 ## Editing
 
@@ -94,7 +130,8 @@ exits 1 and writes nothing where there is no `Cargo.toml`.
 
 ```bash
 ocx-mirror package pipeline generate ci \
-  --spec cargo-deny/mirror.yml
+  --spec cargo-deny/mirror.yml \
+  --spec cargo-about/mirror.yml
 ```
 
 **Name every spec.** `--spec` *appends* rather than replaces, so a command

@@ -1,0 +1,221 @@
+extends: ../mirror-base.yml
+
+name: cargo-about
+
+# Logical index package `embarkstudios/cargo-about` at the physical path
+# `ghcr.io/ocx-contrib/embarkstudios/cargo-about` — slash segments, never
+# hyphen-flattened. The first segment must be this repo's own GitHub owner:
+# GITHUB_TOKEN only authorises packages owned by the repo the workflow runs in.
+#
+# The namespace is lowercase `embarkstudios`; the UPSTREAM GitHub org is
+# `EmbarkStudios` (capitalised) and `source.owner` below must keep that case.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/embarkstudios/cargo-about
+
+source:
+  type: github_release
+  owner: EmbarkStudios
+  repo: cargo-about
+  # BARE semver tags — no `v` prefix, same as the sibling cargo-deny. Verified:
+  #   $ gh api 'repos/EmbarkStudios/cargo-about/releases?per_page=30' --jq '.[].tag_name'
+  #   0.9.1  0.9.0  0.8.4  0.8.3  0.8.2  0.8.1  0.8.0  0.7.1  …
+  tag_pattern: "^(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# MEASURED INDEPENDENTLY OF THE SIBLING SPEC. Upstream ships Linux as **musl
+# only** — no `-gnu` asset for either arch in any in-range release — and both
+# musl builds are FULLY STATIC. Measured on the newest (0.9.1) and the floor
+# (0.8.4), on both arches:
+#
+#   $ file cargo-about-0.9.1-x86_64-unknown-linux-musl/cargo-about
+#   ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked,
+#   BuildID[sha1]=45e2f4d6…, not stripped
+#   $ readelf -l …/cargo-about | grep -c INTERP  → 0
+#   $ readelf -d …/cargo-about | grep -c NEEDED  → 0
+#
+#   $ file cargo-about-0.9.1-aarch64-unknown-linux-musl/cargo-about
+#   ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked,
+#   not stripped                                 INTERP 0, NEEDED 0
+#
+#   $ file cargo-about-0.8.4-x86_64-unknown-linux-musl/cargo-about
+#   … static-pie linked …                        INTERP 0, NEEDED 0
+#   $ file cargo-about-0.8.4-aarch64-unknown-linux-musl/cargo-about
+#   … statically linked …                        INTERP 0, NEEDED 0
+#
+# NOT UPX-packed (the packer stub would leave no PT_INTERP and no section
+# headers, making `file` call even a glibc-dynamic build "statically linked"):
+#   $ strings -a …/cargo-about | grep -c '^UPX'  → 0
+#   $ readelf -h …/cargo-about | grep 'Start of section headers'
+#     Start of section headers: 15639584 (bytes into file)   # non-zero ⇒ not UPX
+#
+# No PT_INTERP and no DT_NEEDED: the artifact requires NOTHING of the host
+# userland, so both Linux keys are BARE. Tagging a static build `+libc.musl`
+# would be a false requirement that hid it from every glibc host. The
+# `alpine:3.20` container leg below is what turns that claim into evidence.
+#
+# ─── Scope (verified BOTH ways on 0.8.4, 0.9.0 and 0.9.1 — the whole in-range
+#     set) ────────────────────────────────────────────────────────────────────
+#
+# Every pattern below was grepped against the FULL asset list of every in-range
+# release and matched EXACTLY ONE asset on all three. A pattern matching zero is
+# SILENTLY SKIPPED, not an error. Each `.tar.gz` has a `.sha256` sidecar, which
+# the `$` anchor after `\.gz` excludes.
+#
+# ⚠️ WINDOWS SHIPS `.tar.gz`, NOT `.zip`, on BOTH windows arches, despite the
+# `-pc-windows-msvc` target triples.
+#
+# ⚠️ darwin/amd64 (`x86_64-apple-darwin`) IS A MID-RANGE DROP — DELIBERATE
+# EXCLUSION, and bumping the floor does NOT recover it. Verified per release:
+#
+#   $ for t in 0.8.2 0.8.3 0.8.4 0.9.0 0.9.1; do
+#       gh api repos/EmbarkStudios/cargo-about/releases/tags/$t \
+#         --jq '.assets[].name' | grep -c 'x86_64-apple-darwin\.tar\.gz$'; done
+#     0.8.2 → 1   0.8.3 → 1   0.8.4 → 1   0.9.0 → 0   0.9.1 → 0
+#
+# The drop lands exactly at **0.9.0**. With `versions.min: 0.8.4` the range
+# spans it, so declaring darwin/amd64 would resolve 0 assets for 0.9.0 and 0.9.1
+# and be silently skipped on every current and future release — a permanently
+# half-empty platform that never reds. Raising the floor to 0.9.0 does not help
+# either: 0.9.x simply has no Intel macOS build. The Apple Silicon leg
+# (`aarch64-apple-darwin`) is present in every release and IS declared.
+#
+# ⚠️ THE MATRIX IS THE MIRROR IMAGE OF THE SIBLING cargo-deny SPEC: this package
+# HAS windows/arm64 and LACKS darwin/amd64; cargo-deny is the reverse. Measured
+# separately for each. Never copy one onto the other.
+assets:
+  linux/amd64:
+    - "^cargo-about-\\d+\\.\\d+\\.\\d+-x86_64-unknown-linux-musl\\.tar\\.gz$"
+  linux/arm64:
+    - "^cargo-about-\\d+\\.\\d+\\.\\d+-aarch64-unknown-linux-musl\\.tar\\.gz$"
+  # ── PASS 2 (darwin) — arm64 ONLY; see the darwin/amd64 drop above ───────────
+  # darwin/arm64:
+  #   - "^cargo-about-\\d+\\.\\d+\\.\\d+-aarch64-apple-darwin\\.tar\\.gz$"
+  # ── PASS 3 (windows) — both arches, .tar.gz not .zip ───────────────────────
+  # windows/amd64:
+  #   - "^cargo-about-\\d+\\.\\d+\\.\\d+-x86_64-pc-windows-msvc\\.tar\\.gz$"
+  # windows/arm64:
+  #   - "^cargo-about-\\d+\\.\\d+\\.\\d+-aarch64-pc-windows-msvc\\.tar\\.gz$"
+
+asset_type:
+  # NESTED archive on EVERY platform — one wrapper directory named after the
+  # asset stem, no `bin/` inside it. Verified by `tar tzvf` on all six 0.9.1
+  # assets and both 0.8.4 Linux assets:
+  #
+  #   cargo-about-0.9.1-x86_64-unknown-linux-musl/
+  #   cargo-about-0.9.1-x86_64-unknown-linux-musl/cargo-about     (0755)
+  #   cargo-about-0.9.1-x86_64-unknown-linux-musl/README.md
+  #   cargo-about-0.9.1-x86_64-unknown-linux-musl/LICENSE-APACHE
+  #   cargo-about-0.9.1-x86_64-unknown-linux-musl/LICENSE-MIT
+  #   (…-pc-windows-msvc/cargo-about.exe on both Windows arches)
+  #
+  # `strip_components: 1` is forced, not preferred: the wrapper's name embeds
+  # BOTH the version and the target triple, so `strip_components: 0` would need
+  # a PATH of `${installPath}/cargo-about-0.9.1-x86_64-unknown-linux-musl` — a
+  # value that changes with every release and every platform and therefore
+  # cannot be written in metadata.json at all. Stripping it puts the executable
+  # at the content root, which is why metadata.json's PATH is a bare
+  # ${installPath} and `bin_scan` stays `off` (see ../mirror-base.yml).
+  type: archive
+  strip_components: 1
+
+metadata:
+  default: metadata.json
+
+catalog:
+  logo: logo.svg
+
+versions:
+  # 0.8.4 is the recon-assigned floor. All three in-range releases (0.8.4,
+  # 0.9.0, 0.9.1) share the same nested archive layout and the CLI surface
+  # tests/smoke.star asserts.
+  #
+  # NOTE the surface DID drift inside this range and the smoke is written around
+  # it: `clarify` emits TOML with DOUBLE quotes on 0.8.4 (`license = "MIT"`) and
+  # SINGLE quotes from 0.9.x (`license = 'MIT'`). The assertions are
+  # quote-agnostic for exactly that reason.
+  min: "0.8.4"
+  new_per_run: 5
+  # Without this the generated workflow only fires on workflow_dispatch + push
+  # and never auto-discovers a new upstream release.
+  poll_interval: "40 */6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
+  # `catalog.logo` above, which resolve against this spec's own directory.
+  - name: smoke
+    script: cargo-about/tests/smoke.star
+
+# ─── Platform matrix — RESTATED IN FULL, not merged ─────────────────────────
+#
+# ../mirror-base.yml deliberately carries NO `platforms:` block, because this
+# package and its sibling cargo-deny have mirror-image matrices. So there is
+# nothing to merge with and nothing to accidentally drop — but the block is
+# still stated in full here, with every `containers:` entry spelled out.
+#
+# A platform declared here but absent from `assets:` does NOT cost nothing: the
+# generated test matrix is static, so the leg boots its runner, installs the
+# toolchain, finds the platform missing from every version's resolved set, skips,
+# and reports SUCCESS. That is macOS at 10× and Windows at 2× the minute rate to
+# verify nothing. Pass 1 is Linux only, so Linux only is declared.
+#
+# PASS 2 / PASS 3: uncomment the matching `assets:` keys above AND the platform
+# keys below in the same edit, by hand (never by sed — a replacement rewrites
+# `\\.` to `\.` inside an asset regex), then re-run `generate ci` naming EVERY
+# spec in this repository and re-validate.
+#
+# libc evidence for the bare keys is above `assets:`; the alpine leg is what
+# makes the universal claim evidence rather than assertion. No `setup:` on any
+# leg: the binaries have no DT_NEEDED at all, and the smoke only writes and
+# reads files in scratch — the `clarify` path shells out to nothing (unlike
+# `generate`/`init`, which invoke `cargo metadata` and are therefore not
+# asserted; see tests/smoke.star).
+platforms:
+  linux/amd64:
+    runner: ubuntu-latest
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  linux/arm64:
+    # arm64 container legs run natively — no qemu — so the runner arch must
+    # match the platform or the renderer reds the leg up front.
+    runner: ubuntu-24.04-arm
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  # ── PASS 2 (darwin) ────────────────────────────────────────────────────────
+  # No darwin/amd64 — upstream dropped x86_64-apple-darwin at 0.9.0; evidence
+  # above `assets:`. Only Apple Silicon is declared.
+  # darwin/arm64:
+  #   runner: macos-14
+  #   shell: bash
+  # ── PASS 3 (windows) ───────────────────────────────────────────────────────
+  # windows/amd64:
+  #   runner: windows-latest
+  #   shell: pwsh
+  # windows/arm64:
+  #   # Native arm64 Windows runner — the amd64 pool cannot execute an ARM64 PE.
+  #   runner: windows-11-arm
+  #   shell: pwsh
+  #
+  # No `containers:` on darwin or windows — those runners have no Linux
+  # container engine, and the key is rejected at spec load.
+
+annotations:
+  # From the Phase 1.5 license gate. GitHub's single-license API field reports
+  # only one half of the dual grant:
+  #   $ gh api repos/EmbarkStudios/cargo-about/license --jq '.license.spdx_id'
+  #   Apache-2.0
+  # The repository root in fact carries BOTH LICENSE-APACHE and LICENSE-MIT
+  # (listed via `gh api repos/EmbarkStudios/cargo-about/contents/`), and both
+  # ship INSIDE every release archive, so the SPDX expression is the dual one.
+  org.opencontainers.image.licenses: "MIT OR Apache-2.0"
+
+announce:
+  # Spelled out, not derived from target.repository — the logical name and the
+  # physical path are related by convention only.
+  package: embarkstudios/cargo-about
+  fork: ocx-contrib/index
