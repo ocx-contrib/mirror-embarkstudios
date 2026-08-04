@@ -1,0 +1,221 @@
+extends: ../mirror-base.yml
+
+name: cargo-deny
+
+# Logical index package `embarkstudios/cargo-deny` at the physical path
+# `ghcr.io/ocx-contrib/embarkstudios/cargo-deny` — slash segments, never
+# hyphen-flattened. The first segment must be this repo's own GitHub owner:
+# GITHUB_TOKEN only authorises packages owned by the repo the workflow runs in.
+#
+# The namespace is lowercase `embarkstudios`; the UPSTREAM GitHub org is
+# `EmbarkStudios` (capitalised) and `source.owner` below must keep that case.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/embarkstudios/cargo-deny
+
+source:
+  type: github_release
+  owner: EmbarkStudios
+  repo: cargo-deny
+  # BARE semver tags — no `v` prefix. Verified against the full release list:
+  #   $ gh api 'repos/EmbarkStudios/cargo-deny/releases?per_page=30' --jq '.[].tag_name'
+  #   0.20.2  0.19.9  0.19.8  0.19.7  0.19.6  0.19.5  0.19.4  0.19.2  …
+  # (0.19.3 is genuinely missing from upstream's history — neither draft nor
+  # prerelease, apparently yanked between 0.19.2 and 0.19.4. It sits below the
+  # floor and is not an indexing bug.)
+  tag_pattern: "^(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# Upstream ships Linux as **musl only** — there is no `-gnu` asset for either
+# arch in any in-range release, so there is no gnu-vs-musl split to weigh. What
+# decides the key is linkage, not the filename, and both musl builds are FULLY
+# STATIC. Measured on the newest (0.20.2) and the oldest in range (0.19.8), on
+# both arches:
+#
+#   $ file cargo-deny-0.20.2-x86_64-unknown-linux-musl/cargo-deny
+#   ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked,
+#   BuildID[sha1]=8f311a21…, stripped
+#   $ readelf -l …/cargo-deny | grep -c INTERP  → 0
+#   $ readelf -d …/cargo-deny | grep -c NEEDED  → 0
+#
+#   $ file cargo-deny-0.20.2-aarch64-unknown-linux-musl/cargo-deny
+#   ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked,
+#   BuildID[sha1]=be1c423b…, stripped
+#   $ readelf -l …/cargo-deny | grep -c INTERP  → 0
+#   $ readelf -d …/cargo-deny | grep -c NEEDED  → 0
+#
+#   $ file cargo-deny-0.19.8-x86_64-unknown-linux-musl/cargo-deny
+#   … static-pie linked …                        INTERP 0, NEEDED 0
+#   $ file cargo-deny-0.19.8-aarch64-unknown-linux-musl/cargo-deny
+#   … statically linked …                        INTERP 0, NEEDED 0
+#
+# NOT UPX-packed (the packer stub defeats this gate by leaving no PT_INTERP and
+# no section headers, so `file` calls every asset "statically linked"):
+#   $ strings -a …/cargo-deny | grep -c '^UPX'   → 0
+#   $ readelf -h …/cargo-deny | grep 'Start of section headers'
+#     Start of section headers: 8842960 (bytes into file)   # non-zero ⇒ not UPX
+#
+# No PT_INTERP and no DT_NEEDED: the artifact requires NOTHING of the host
+# userland, so both Linux keys are BARE. `os.features` states what the artifact
+# REQUIRES, so tagging a static build `+libc.musl` would be a false requirement
+# that hid it from every glibc host — on which it runs fine. The `alpine:3.20`
+# container leg below is what turns that universal claim into evidence.
+#
+# ─── Scope (verified BOTH ways on 0.19.8, 0.19.9 and 0.20.2 — the whole
+#     in-range set) ───────────────────────────────────────────────────────────
+#
+# Every pattern below was grepped against the FULL asset list of every in-range
+# release and matched EXACTLY ONE asset on all three. A pattern matching zero is
+# SILENTLY SKIPPED, not an error, so this check is the only thing standing
+# between a typo and a green run with a missing platform. Each release ships
+# exactly ten assets: five `.tar.gz` and their five `.sha256` sidecars, which the
+# `$` anchor after `\.gz` excludes.
+#
+# ⚠️ WINDOWS SHIPS `.tar.gz`, NOT `.zip`, despite the `x86_64-pc-windows-msvc`
+# target triple. Verified on all three in-range releases; do not assume
+# zip-for-windows here.
+#
+# ⚠️ windows/arm64 (`aarch64-pc-windows-msvc`) IS NEVER SHIPPED — DELIBERATE
+# EXCLUSION, not an omission. Verified per release across the whole in-range set:
+#   $ for t in 0.19.8 0.19.9 0.20.2; do gh api \
+#       repos/EmbarkStudios/cargo-deny/releases/tags/$t --jq '.assets[].name' \
+#       | grep -c aarch64-pc-windows-msvc; done   → 0  0  0
+# Its SIBLING in this repo, cargo-about, DOES ship that triple in every release —
+# the two matrices are mirror images and must never be copied onto each other.
+# Declaring it here would boot a `windows-11-arm` runner that resolves zero
+# assets, self-skips every version and reports SUCCESS having tested nothing.
+assets:
+  linux/amd64:
+    - "^cargo-deny-\\d+\\.\\d+\\.\\d+-x86_64-unknown-linux-musl\\.tar\\.gz$"
+  linux/arm64:
+    - "^cargo-deny-\\d+\\.\\d+\\.\\d+-aarch64-unknown-linux-musl\\.tar\\.gz$"
+  # ── PASS 2 (darwin) — uncomment together with the platforms: keys below ─────
+  # darwin/amd64:
+  #   - "^cargo-deny-\\d+\\.\\d+\\.\\d+-x86_64-apple-darwin\\.tar\\.gz$"
+  # darwin/arm64:
+  #   - "^cargo-deny-\\d+\\.\\d+\\.\\d+-aarch64-apple-darwin\\.tar\\.gz$"
+  # ── PASS 3 (windows) — .tar.gz, not .zip ───────────────────────────────────
+  # windows/amd64:
+  #   - "^cargo-deny-\\d+\\.\\d+\\.\\d+-x86_64-pc-windows-msvc\\.tar\\.gz$"
+  # (no windows/arm64 — upstream never ships aarch64-pc-windows-msvc; see above)
+
+asset_type:
+  # NESTED archive on EVERY platform — one wrapper directory named after the
+  # asset stem, with no `bin/` inside it. Verified by `tar tzvf` on all five
+  # 0.20.2 assets and on both 0.19.8 Linux assets:
+  #
+  #   cargo-deny-0.20.2-x86_64-unknown-linux-musl/
+  #   cargo-deny-0.20.2-x86_64-unknown-linux-musl/cargo-deny      (0755)
+  #   cargo-deny-0.20.2-x86_64-unknown-linux-musl/README.md
+  #   cargo-deny-0.20.2-x86_64-unknown-linux-musl/LICENSE-APACHE
+  #   cargo-deny-0.20.2-x86_64-unknown-linux-musl/LICENSE-MIT
+  #   (…-x86_64-pc-windows-msvc/cargo-deny.exe on Windows)
+  #
+  # `strip_components: 1` is forced, not preferred: the wrapper's name embeds
+  # BOTH the version and the target triple, so `strip_components: 0` would need
+  # a PATH of `${installPath}/cargo-deny-0.20.2-x86_64-unknown-linux-musl` —
+  # a value that changes with every release and every platform and therefore
+  # cannot be written in metadata.json at all. Stripping it puts the executable
+  # at the content root, which is why metadata.json's PATH is a bare
+  # ${installPath} and `bin_scan` stays `off` (see ../mirror-base.yml).
+  #
+  # The two upstream LICENSE files ride along at the content root, so the
+  # redistribution terms travel with the redistributed bytes.
+  type: archive
+  strip_components: 1
+
+metadata:
+  default: metadata.json
+
+catalog:
+  logo: logo.svg
+
+versions:
+  # 0.19.8 is the recon-assigned floor. All three in-range releases (0.19.8,
+  # 0.19.9, 0.20.2) pass the both-ways platform check above, share the same
+  # nested archive layout, and share the CLI surface tests/smoke.star asserts
+  # (`--version`, the `deny` argv absorption, and `init`'s deny.toml template —
+  # all measured on 0.19.8 and 0.20.2).
+  min: "0.19.8"
+  new_per_run: 5
+  # Without this the generated workflow only fires on workflow_dispatch + push
+  # and never auto-discovers a new upstream release.
+  poll_interval: "39 */6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
+  # `catalog.logo` above, which resolve against this spec's own directory.
+  - name: smoke
+    script: cargo-deny/tests/smoke.star
+
+# ─── Platform matrix — RESTATED IN FULL, not merged ─────────────────────────
+#
+# ../mirror-base.yml deliberately carries NO `platforms:` block, because this
+# package and its sibling cargo-about have mirror-image matrices (this one has
+# darwin/amd64 and no windows/arm64; cargo-about is the reverse). So there is
+# nothing to merge with and nothing to accidentally drop — but the block is
+# still stated in full here, with every `containers:` entry spelled out.
+#
+# A platform declared here but absent from `assets:` does NOT cost nothing: the
+# generated test matrix is static, so the leg boots its runner, installs the
+# toolchain, finds the platform missing from every version's resolved set, skips,
+# and reports SUCCESS. That is macOS at 10× and Windows at 2× the minute rate to
+# verify nothing. Pass 1 is Linux only, so Linux only is declared.
+#
+# PASS 2 / PASS 3: uncomment the matching `assets:` keys above AND the platform
+# keys below in the same edit, by hand (never by sed — a replacement rewrites
+# `\\.` to `\.` inside an asset regex), then re-run `generate ci` naming EVERY
+# spec in this repository and re-validate.
+#
+# libc evidence for the bare keys is above `assets:`; the alpine leg is what
+# makes the universal claim evidence rather than assertion. No `setup:` on any
+# leg: the binaries have no DT_NEEDED at all and the smoke only writes and reads
+# files in scratch — it shells out to nothing, so the stock images suffice.
+platforms:
+  linux/amd64:
+    runner: ubuntu-latest
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  linux/arm64:
+    # arm64 container legs run natively — no qemu — so the runner arch must
+    # match the platform or the renderer reds the leg up front.
+    runner: ubuntu-24.04-arm
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  # ── PASS 2 (darwin) ────────────────────────────────────────────────────────
+  # darwin/amd64:
+  #   # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 — GitHub's
+  #   # native macos-13 Intel pool is exhausted and deadlocks the push job.
+  #   runner: macos-14
+  #   prefix: ["arch", "-x86_64"]
+  # darwin/arm64:
+  #   runner: macos-14
+  #   shell: bash
+  # ── PASS 3 (windows) ───────────────────────────────────────────────────────
+  # windows/amd64:
+  #   runner: windows-latest
+  #   shell: pwsh
+  #
+  # No `containers:` on darwin or windows — those runners have no Linux
+  # container engine, and the key is rejected at spec load.
+
+annotations:
+  # From the Phase 1.5 license gate. GitHub's single-license API field reports
+  # only one half of the dual grant:
+  #   $ gh api repos/EmbarkStudios/cargo-deny/license --jq '.license.spdx_id'
+  #   Apache-2.0
+  # The repository root in fact carries BOTH LICENSE-APACHE and LICENSE-MIT
+  # (listed via `gh api repos/EmbarkStudios/cargo-deny/contents/`), and both ship
+  # INSIDE every release archive, so the SPDX expression is the dual one.
+  org.opencontainers.image.licenses: "MIT OR Apache-2.0"
+
+announce:
+  # Spelled out, not derived from target.repository — the logical name and the
+  # physical path are related by convention only.
+  package: embarkstudios/cargo-deny
+  fork: ocx-contrib/index
