@@ -191,7 +191,7 @@ platforms:
   # above `assets:`. Only Apple Silicon is declared, so there is no
   # `prefix: ["arch", "-x86_64"]` Rosetta leg here (unlike ../cargo-deny).
   darwin/arm64:
-    runner: macos-14
+    runner: macos-15
     shell: bash
   # ── PASS 3 (windows) — LANDED ──────────────────────────────────────────────
   windows/amd64:
